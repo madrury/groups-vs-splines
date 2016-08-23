@@ -21,6 +21,9 @@ test_cuts_vs_splines <- function(signal, N, noise,
   y_train <- signal(x_train) + rnorm(N, 0, noise)
   y_test <- signal(x_test) + rnorm(N, 0, noise)
 
+  out_obj$training_data <- data.frame(x = x_train, y = y_train)
+  out_obj$testing_data <- data.frame(x = x_test, y = y_test)
+
   #---- Draw a simple line plot of the true signal
   df_signal_plot <- data.frame(
     x = seq(range[1], range[2], length.out = 100)
@@ -72,7 +75,7 @@ test_cuts_vs_splines <- function(signal, N, noise,
     soses <- (1/N) * sum( (y_test - test_preds)**2)
     test_errors_cuts[n_groups - 2] <- soses
   }
-  out_obj$model_with_groupings <- models_with_groupings
+  out_obj$models_with_groupings <- models_with_groupings
 
   error_df_cuts <- data.frame(
     x = rep(3:max_parameters, 2),
@@ -145,6 +148,62 @@ test_cuts_vs_splines <- function(signal, N, noise,
 
   out_obj
 }
+
+
+#---- A very non linear function
+true_signal_weird <- function(x) {
+  x*x*x*(x-1) + 2*(1/(1+exp(-.5*(x-.5)))) - 3.5*(x > .2)*(x < .5)*(x - .2)*(x - .5)
+}
+obj <- test_cuts_vs_splines(true_signal_weird, 250, 0.075)
+
+
+# Plot the data and predicted values from the grouping model
+M <- obj$models_with_groupings[[5]]
+
+plot_df <- data.frame(x_cont=seq(0, 1, 0.05))
+plot_df$x <- cut(plot_df$x_cont, seq(0, 1, length.out = 6))
+plot_df$y <- predict(M, newdata=plot_df)
+
+ggplot() +
+  geom_line(aes(x=x_cont, y=y), data=plot_df, color="blue", size=2, alpha=0.5) +
+  geom_point(aes(x=x, y=y), data=obj$testing_data)
+
+# Plot the data and predicted values from the spline model
+M <- obj$models_with_splines[[5]]
+
+plot_df <- data.frame(x=seq(0, 1, 0.005))
+plot_df$y <- predict(M, newdata=plot_df)
+
+ggplot() +
+  geom_line(aes(x=x, y=y), data=plot_df, color="blue", size=2, alpha=0.5) +
+  geom_point(aes(x=x, y=y), data=obj$testing_data)
+
+#--- Let's run the experiment a ton of times to make sure of our conclusions
+weird_replicates <- list()
+for(i in 1:25) {
+  weird_replicates[[i]] <- test_cuts_vs_splines(true_signal_weird, 500, 0.075, seed=100*i)
+}
+
+K <- nrow(weird_replicates[[1]]$error_df)
+errors <- do.call(rbind, lapply(weird_replicates, `[[`, "error_df"))
+errors$model_id <- rep(1:25, each=K)
+
+# Summarize and make the average error curve
+errors_summary <- errors %>%
+  group_by_(.dots=c("x", "id", "type")) %>%
+  summarize(e = mean(e))
+
+ggplot() +
+  geom_line(aes(x=x, y=e, group=model_id), alpha=0.25, data=errors) +
+  geom_line(aes(x=x, y=e), data=errors_summary, size=2) +
+  facet_wrap(~ id*type)
+
+
+#--- A sinusoidal signal function
+
+
+
+
 
 true_signal_sin <- function(x) {
   x + 1.5*sin(3*2*pi*x)
